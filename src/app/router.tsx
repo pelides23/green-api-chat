@@ -19,8 +19,8 @@ export const router = createBrowserRouter([
         lazy: () => import("@/features/login/login.page"),
       },
       {
-        element: <div>Chat</div>,
         path: ROUTES.CHAT,
+        lazy: () => import("@/features/chat/chat.page"),
       },
     ],
   },
