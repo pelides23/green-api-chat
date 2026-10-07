@@ -1,73 +1,99 @@
-# React + TypeScript + Vite
+# WhatsApp Chat
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Тестовое задание: интерфейс для отправки и получения текстовых сообщений в WhatsApp через GREEN-API. Реализован на React и TypeScript.
 
-Currently, two official plugins are available:
+## Возможности
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Ввод учётных данных GREEN-API: `idInstance` и `apiTokenInstance`.
+- Создание и выбор чата по номеру телефона.
+- Отправка текстовых сообщений из интерфейса.
+- Получение ответов собеседника через HTTP API.
+- Отображение сообщений, отправленных вручную с телефона подключённого аккаунта.
+- Раздельное отображение входящих и исходящих сообщений.
+- Валидация форм и отображение ошибок отправки.
+- Прокрутка истории сообщений.
 
-## React **Compiler**
+## Стек
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- React, TypeScript, Vite.
+- TanStack Query — управление запросом отправки.
+- Fetch API — HTTP-запросы к GREEN-API.
+- React Hook Form и Zod — формы и валидация.
+- Tailwind CSS — стили интерфейса.
 
-## Expanding the ESLint configuration
+## Настройка GREEN-API
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+Для работы нужен инстанс GREEN-API с подключённым WhatsApp-аккаунтом.
 
-```js
-export default defineConfig([
-  globalIgnores(["dist"]),
-  {
-    files: ["**/*.{ts,tsx}"],
-    extends: [
-      // Other configs...
+1. Создайте инстанс в [личном кабинете GREEN-API](https://console.green-api.com/) и подключите WhatsApp по инструкции сервиса.
+2. Скопируйте `idInstance`, `apiTokenInstance` и адрес `apiUrl` выбранного инстанса.
+3. В настройках уведомлений включите получение уведомлений о входящих сообщениях и файлах.
+4. Для отображения сообщений, отправленных с телефона, включите получение уведомлений о сообщениях, отправленных с телефона.
+5. Оставьте адрес отправки уведомлений (`webhookUrl`) пустым: приложение получает события через HTTP API.
+6. Сохраните настройки.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+Документация: [получение уведомлений через HTTP API](https://green-api.com/docs/api/receiving/technology-http-api/).
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
+## Локальный запуск
+
+Из корня проекта установите зависимости:
+
+```bash
+npm ci
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+Создайте в корне проекта файл `.env.development`:
 
-```js
-// eslint.config.js
-import reactX from "eslint-plugin-react-x";
-import reactDom from "eslint-plugin-react-dom";
-
-export default defineConfig([
-  globalIgnores(["dist"]),
-  {
-    files: ["**/*.{ts,tsx}"],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs["recommended-typescript"],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
+```dotenv
+VITE_API_URL=https://YOUR_INSTANCE_API_HOST
 ```
+
+Замените адрес на значение `apiUrl` из личного кабинета GREEN-API. Укажите базовый адрес без завершающего `/`, пути метода и токена. `idInstance` и `apiTokenInstance` вводятся в интерфейсе приложения.
+
+Запустите сервер разработки:
+
+```bash
+npm run dev
+```
+
+Откройте адрес, указанный Vite в терминале. После изменения переменных окружения перезапустите сервер разработки.
+
+Для production-сборки задайте `VITE_API_URL` в `.env.production` или окружении сборки:
+
+```bash
+npm run build
+```
+
+## Проверка работы
+
+Для проверки нужны два разных WhatsApp-аккаунта:
+
+- **Аккаунт А** подключён к инстансу GREEN-API.
+- **Аккаунт Б** используется как собеседник.
+
+1. Введите в приложении учётные данные инстанса аккаунта А.
+2. Создайте чат с номером аккаунта Б в международном формате, включая код страны.
+3. Отправьте текст из приложения и проверьте его получение аккаунтом Б.
+4. С аккаунта Б ответьте аккаунту А. Ответ должен появиться слева в чате приложения.
+5. С телефона аккаунта А отправьте сообщение аккаунту Б. Оно должно появиться справа в том же чате.
+
+## Как работает получение
+
+Приложение последовательно вызывает `ReceiveNotification`. Полученное событие проверяется и преобразуется во внутренний тип `Message`. После обработки вызывается `DeleteNotification`, затем начинается следующий запрос.
+
+- `incomingMessageReceived` отображается как входящее сообщение.
+- `outgoingMessageReceived` отображается как исходящее сообщение с телефона.
+- Повторное добавление событий отсекается по идентификатору сообщения.
+- При завершении эффекта запросы отменяются через `AbortController`.
+
+Отправка вынесена в `useSendMessage`, получение — в `useIncomingMessages`. `ChatPage` связывает формы, состояние переписки и UI-компоненты.
+
+## Ограничения
+
+- Чаты и сообщения хранятся в состоянии React; после перезагрузки страницы локальная переписка сбрасывается.
+- Приложение не загружает полную историю WhatsApp. Уже обработанные и удалённые из очереди уведомления повторно не поступают.
+- Интерфейс предназначен для текстовой переписки; вложения, звонки и групповые чаты не входят в реализованный сценарий.
+- Доставка уведомлений зависит от GREEN-API и состояния WhatsApp-аккаунта. Статус `suspended` требует отдельной проверки ограничений аккаунта.
+- Для проверки используйте одну вкладку приложения: несколько клиентов одного инстанса могут получать и удалять события из общей очереди.
+
+Учётные данные вводятся для прямого обращения к GREEN-API из браузера. Не публикуйте токен в репозитории, README или скриншотах.
