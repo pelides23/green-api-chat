@@ -3,15 +3,6 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
 
-/*Primitive = что это за цвет?
-Blue 600, Gray 500
-
-Semantic token = зачем этот цвет используется?
-primary, muted-foreground, border
-
-Tailwind class = где его применить?
-bg-primary, text-muted-foreground, border-border*/
-
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: "Inter Variable", sans-serif;

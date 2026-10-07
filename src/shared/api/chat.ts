@@ -18,7 +18,7 @@ type ReceiveNotificationParams = {
 type NotificationResponse = {
   receiptId: number;
   body: {
-    typeWebhook: string;
+    typeWebhook: "incomingMessageReceived" | "outgoingMessageReceived";
     [key: string]: unknown;
   };
 };

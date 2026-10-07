@@ -1,51 +1,14 @@
-import { chat } from "@/shared/api/chat";
-import { useAuth } from "@/shared/lib/use-auth";
 import { Button } from "@/shared/ui/kit/button";
 import { Field, FieldLabel, FieldSet } from "@/shared/ui/kit/field";
 import { Input } from "@/shared/ui/kit/input";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-
-const incomingTextSchema = z.object({
-  typeWebhook: z.literal("incomingMessageReceived"),
-  idMessage: z.string(),
-  timestamp: z.number(),
-  senderData: z.object({
-    chatId: z.string(),
-  }),
-  messageData: z.object({
-    typeMessage: z.literal("textMessage"),
-    textMessageData: z.object({
-      textMessage: z.string(),
-    }),
-  }),
-});
-
-const parseIncomingMessage = (body: unknown): Message | null => {
-  const result = incomingTextSchema.safeParse(body);
-
-  if (!result.success) {
-    return null;
-  }
-
-  const data = result.data;
-  const chatId = data.senderData.chatId;
-
-  if (!chatId.endsWith("@c.us")) {
-    return null;
-  }
-
-  return {
-    id: data.idMessage,
-    phone: chatId.replace(/@c\.us$/, ""),
-    text: data.messageData.textMessageData.textMessage,
-    direction: "incoming",
-    createdAt: data.timestamp * 1000,
-  };
-};
+import { type Message } from "./domain/message";
+import { useIncomingMessages } from "./model/use-incoming-messages";
+import { useSendMessage } from "./model/use-send-message";
+import { cn } from "@/shared/lib/css";
 
 const phoneSchema = z.object({
   phone: z
@@ -79,17 +42,7 @@ const chatSchema = z.object({
 
 type chatFormType = z.infer<typeof chatSchema>;
 
-type Message = {
-  id: string;
-  phone: string;
-  text: string;
-  direction: "incoming" | "outgoing";
-  createdAt: number;
-};
-
 export const ChatPage = () => {
-  const { credentials } = useAuth();
-
   const phoneForm = useForm<phoneFormType>({
     resolver: zodResolver(phoneSchema),
     defaultValues: {
@@ -104,39 +57,16 @@ export const ChatPage = () => {
     },
   });
 
-  const sendMessageMutation = useMutation({
-    mutationFn: chat.sendMessage,
-    retry: false,
-  });
-
   const [chats, setChats] = useState<Phone[]>([]);
-  const [messages, setMessages] = useState<Message[]>([]);
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const isNearBottomRef = useRef(true);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const sendMessageMutation = useSendMessage();
 
   const selectedMessages = messages.filter(
     (message) => message.phone === selectedPhone,
   );
 
-  useEffect(() => {
-    isNearBottomRef.current = true;
-    const container = messagesContainerRef.current;
-
-    if (container) {
-      container.scrollTop = container.scrollHeight;
-    }
-  }, [selectedPhone]);
-
-  useEffect(() => {
-    const container = messagesContainerRef.current;
-
-    if (container && isNearBottomRef.current) {
-      container.scrollTop = container.scrollHeight;
-    }
-  }, [selectedMessages.length]);
-
-  const addIncomingMessage = useCallback((message: Message) => {
+  const addMessage = useCallback((message: Message) => {
     setMessages((prev) => {
       const exists = prev.some((item) => item.id === message.id);
 
@@ -151,7 +81,7 @@ export const ChatPage = () => {
   }, []);
 
   const onChatSubmit = chatForm.handleSubmit(async (data) => {
-    if (!credentials || !selectedPhone || sendMessageMutation.isPending) {
+    if (!selectedPhone || sendMessageMutation.isPending) {
       return;
     }
 
@@ -163,23 +93,9 @@ export const ChatPage = () => {
     chatForm.clearErrors("root");
 
     try {
-      const res = await sendMessageMutation.mutateAsync({
-        idInstance: credentials.idInstance,
-        apiTokenInstance: credentials.apiTokenInstance,
-        chatId: `${phone}@c.us`,
-        message: text,
-      });
+      const message = await sendMessageMutation.sendMessage({ phone, text });
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: res.idMessage,
-          phone,
-          text,
-          direction: "outgoing",
-          createdAt: Date.now(),
-        },
-      ]);
+      setMessages((prev) => [...prev, message]);
 
       chatForm.reset();
     } catch {
@@ -189,76 +105,19 @@ export const ChatPage = () => {
     }
   });
 
-  const onSubmit = phoneForm.handleSubmit((data) => {
+  const onCreateChatSubmit = phoneForm.handleSubmit((data) => {
     setSelectedPhone(data.phone);
     setChats((prev) => {
       const exists = prev.some((chat) => chat.phone === data.phone);
 
-      return exists ? prev : [...prev, data];
+      return exists ? prev : [data, ...prev];
     });
     phoneForm.reset();
   });
 
-  const idInstance = credentials?.idInstance;
-  const apiTokenInstance = credentials?.apiTokenInstance;
-
-  useEffect(() => {
-    if (!idInstance || !apiTokenInstance) {
-      return;
-    }
-
-    const controller = new AbortController();
-    const { signal } = controller;
-
-    const receiveMessages = async () => {
-      while (!signal.aborted) {
-        try {
-          const notification = await chat.receiveNotification({
-            idInstance,
-            apiTokenInstance,
-            signal,
-          });
-
-          if (signal.aborted) {
-            return;
-          }
-
-          if (!notification) {
-            continue;
-          }
-
-          const message = parseIncomingMessage(notification.body);
-
-          if (message) {
-            addIncomingMessage(message);
-          }
-
-          await chat.deleteNotification({
-            idInstance,
-            apiTokenInstance,
-            receiptId: notification.receiptId,
-            signal,
-          });
-        } catch (error) {
-          if (signal.aborted) {
-            return;
-          }
-
-          console.error("Ошибка получения уведомлений:", error);
-
-          await new Promise<void>((resolve) => {
-            setTimeout(resolve, 2000);
-          });
-        }
-      }
-    };
-
-    void receiveMessages();
-
-    return () => {
-      controller.abort();
-    };
-  }, [idInstance, apiTokenInstance, addIncomingMessage]);
+  useIncomingMessages({
+    onMessage: addMessage,
+  });
 
   return (
     <div className="h-dvh w-full flex flex-col overflow-hidden">
@@ -267,26 +126,12 @@ export const ChatPage = () => {
           <div className="shrink-0 border-b border-border p-6">
             <h1 className="mb-6 text-lg font-medium">Чаты</h1>
 
-            <form onSubmit={onSubmit}>
+            <form onSubmit={onCreateChatSubmit}>
               <FieldSet>
                 <Field>
                   <FieldLabel>Номер телефона</FieldLabel>
                   <Input
-                    {...phoneForm.register("phone", {
-                      required: "Введите номер телефона",
-                      validate: (value) => {
-                        if (!/^\+?[\d\s()-]+$/.test(value.trim())) {
-                          return "Номер не должен содержать буквы";
-                        }
-
-                        const digits = value.replace(/\D/g, "");
-
-                        return (
-                          /^7\d{10}$/.test(digits) ||
-                          "Введите номер в формате +7 (999) 999-99-99"
-                        );
-                      },
-                    })}
+                    {...phoneForm.register("phone")}
                     type="tel"
                     autoComplete="tel"
                     placeholder="+7 (999) 999-99-99"
@@ -298,7 +143,13 @@ export const ChatPage = () => {
                     {phoneForm.formState.errors.phone.message}
                   </p>
                 )}
-                <Button type="submit">Создать чат</Button>
+                <Button
+                  type="submit"
+                  className="cursor-pointer"
+                  disabled={chatForm.formState.isSubmitting}
+                >
+                  Создать чат
+                </Button>
               </FieldSet>
             </form>
           </div>
@@ -314,17 +165,18 @@ export const ChatPage = () => {
                 {chats.map((chat, i) => {
                   const isSelected = selectedPhone === chat.phone;
                   return (
-                    <div
+                    <Button
                       key={i}
-                      className={`cursor-pointer rounded-md p-2 ${
+                      className={cn(
+                        "cursor-pointer rounded-md p-2 text-left disabled:opacity-50",
                         isSelected
-                          ? "bg-primary/10 text-primary"
-                          : "hover:bg-primary/5"
-                      }`}
+                          ? "bg-primary"
+                          : "bg-muted text-primary hover:bg-primary/10",
+                      )}
                       onClick={() => setSelectedPhone(chat.phone)}
                     >
                       +{chat.phone}
-                    </div>
+                    </Button>
                   );
                 })}
               </div>
@@ -341,16 +193,7 @@ export const ChatPage = () => {
             )}
           </header>
 
-          <div
-            ref={messagesContainerRef}
-            className="min-h-0 flex-1 overflow-y-auto bg-muted/30 p-6"
-            onScroll={(event) => {
-              const { scrollHeight, scrollTop, clientHeight } =
-                event.currentTarget;
-              isNearBottomRef.current =
-                scrollHeight - scrollTop - clientHeight < 80;
-            }}
-          >
+          <div className="min-h-0 flex-1 overflow-y-auto bg-muted/30 p-6">
             <div className="mx-auto flex min-h-full w-full max-w-200 flex-col gap-3">
               {!selectedPhone ? (
                 <p className="my-auto text-center text-sm text-muted-foreground">
@@ -367,16 +210,18 @@ export const ChatPage = () => {
                   return (
                     <div
                       key={message.id}
-                      className={`flex ${
-                        isOutgoing ? "justify-end" : "justify-start"
-                      }`}
+                      className={cn(
+                        "flex",
+                        isOutgoing ? "justify-end" : "justify-start",
+                      )}
                     >
                       <p
-                        className={`max-w-[75%] whitespace-pre-wrap wrap-break-word rounded-lg px-4 py-2 ${
+                        className={cn(
+                          "max-w-[75%] whitespace-pre-wrap wrap-break-word rounded-lg px-4 py-2",
                           isOutgoing
                             ? "bg-primary/10 text-foreground"
-                            : "border border-border bg-background text-foreground"
-                        }`}
+                            : "border border-border bg-background text-foreground",
+                        )}
                       >
                         {message.text}
                       </p>
@@ -403,16 +248,14 @@ export const ChatPage = () => {
                 />
                 <Button
                   type="submit"
+                  className="cursor-pointer"
                   disabled={!selectedPhone || chatForm.formState.isSubmitting}
                 >
                   {chatForm.formState.isSubmitting ? "Отправка…" : "Отправить"}
                 </Button>
               </div>
               {chatForm.formState.errors.root && (
-                <p
-                  role="alert"
-                  className="mx-auto w-full max-w-200 text-sm text-destructive"
-                >
+                <p className="mx-auto w-full max-w-200 text-sm text-destructive">
                   {chatForm.formState.errors.root.message}
                 </p>
               )}
