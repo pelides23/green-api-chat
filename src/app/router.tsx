@@ -1,8 +1,8 @@
 import { ROUTES } from "@/shared/model/routes";
 import { createBrowserRouter, redirect } from "react-router-dom";
 import App from "./App";
-import { Provider } from "./provider";
 import { AuthProvider } from "./auth-provider";
+import { Provider } from "./provider";
 
 export const router = createBrowserRouter([
   {
